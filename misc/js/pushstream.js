@@ -1,34 +1,42 @@
 /*global PushStream WebSocketWrapper EventSourceWrapper EventSource*/
 /*jshint evil: true, plusplus: false, regexp: false */
 /**
- * Copyright (C) 2010-2012 Wandenberg Peixoto <wandenberg@gmail.com>, Rogério Carvalho Schneider <stockrt@gmail.com>
- *
- * This file is part of Nginx Push Stream Module.
- *
- * Nginx Push Stream Module is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * Nginx Push Stream Module is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with Nginx Push Stream Module.  If not, see <http://www.gnu.org/licenses/>.
- *
- *
- * pushstream.js
- *
- * Created: Nov 01, 2011
- * Authors: Wandenberg Peixoto <wandenberg@gmail.com>, Rogério Carvalho Schneider <stockrt@gmail.com>
+The MIT License (MIT)
+
+Copyright (c) 2010-2014 Wandenberg Peixoto <wandenberg@gmail.com>, Rogério Carvalho Schneider <stockrt@gmail.com>
+
+This file is part of Nginx Push Stream Module.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+pushstream.js
+
+Created: Nov 01, 2011
+Authors: Wandenberg Peixoto <wandenberg@gmail.com>, Rogério Carvalho Schneider <stockrt@gmail.com>
  */
 (function (window, document, undefined) {
   "use strict";
 
   /* prevent duplicate declaration */
   if (window.PushStream) { return; }
+
+  var Utils = {};
 
   var days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
   var months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -37,7 +45,7 @@
     return ((value < 10) ? '0' : '') + value;
   };
 
-  var dateToUTCString = function (date) {
+  Utils.dateToUTCString = function (date) {
     var time = valueToTwoDigits(date.getUTCHours()) + ':' + valueToTwoDigits(date.getUTCMinutes()) + ':' + valueToTwoDigits(date.getUTCSeconds());
     return days[date.getUTCDay()] + ', ' + valueToTwoDigits(date.getUTCDate()) + ' ' + months[date.getUTCMonth()] + ' ' + date.getUTCFullYear() + ' ' + time + ' GMT';
   };
@@ -64,7 +72,7 @@
     return value.replace(/^\s*/, "").replace(/\s*$/, "");
   };
 
-  var parseJSON = function(data) {
+  Utils.parseJSON = function(data) {
     if (!data || !isString(data)) {
       return null;
     }
@@ -90,8 +98,28 @@
     throw "Invalid JSON: " + data;
   };
 
+  var getControlParams = function(pushstream) {
+    var data = {};
+    data[pushstream.tagArgument] = "";
+    data[pushstream.timeArgument] = "";
+    data[pushstream.eventIdArgument] = "";
+    if (pushstream.messagesControlByArgument) {
+      data[pushstream.tagArgument] = Number(pushstream._etag);
+      if (pushstream._lastModified) {
+        data[pushstream.timeArgument] = pushstream._lastModified;
+      } else if (pushstream._lastEventId) {
+        data[pushstream.eventIdArgument] = pushstream._lastEventId;
+      }
+    }
+    return data;
+  };
+
+  var getTime = function() {
+    return (new Date()).getTime();
+  };
+
   var currentTimestampParam = function() {
-    return { "_" : (new Date()).getTime() };
+    return { "_" : getTime() };
   };
 
   var objectToUrlParams = function(settings) {
@@ -121,29 +149,43 @@
     return Object.prototype.toString.call(obj) === '[object String]';
   };
 
+  var isDate = function(obj) {
+    return Object.prototype.toString.call(obj) === '[object Date]';
+  };
+
   var Log4js = {
     logger: null,
     debug : function() { if  (PushStream.LOG_LEVEL === 'debug')                                         { Log4js._log.apply(Log4js._log, arguments); }},
     info  : function() { if ((PushStream.LOG_LEVEL === 'info')  || (PushStream.LOG_LEVEL === 'debug'))  { Log4js._log.apply(Log4js._log, arguments); }},
     error : function() {                                                                                  Log4js._log.apply(Log4js._log, arguments); },
+    _initLogger : function() {
+      var console = window.console;
+      if (console && console.log) {
+        if (console.log.apply) {
+          Log4js.logger = console.log;
+        } else if ((typeof console.log === "object") && Function.prototype.bind) {
+          Log4js.logger = Function.prototype.bind.call(console.log, console);
+        } else if ((typeof console.log === "object") && Function.prototype.call) {
+          Log4js.logger = function() {
+            Function.prototype.call.call(console.log, console, Array.prototype.slice.call(arguments));
+          };
+        }
+      }
+    },
     _log  : function() {
       if (!Log4js.logger) {
-        var console = window.console;
-        if (console && console.log) {
-          if (console.log.apply) {
-            Log4js.logger = console.log;
-          } else if ((typeof console.log === "object") && Function.prototype.bind) {
-            Log4js.logger = Function.prototype.bind.call(console.log, console);
-          } else if ((typeof console.log === "object") && Function.prototype.call) {
-            Log4js.logger = function() {
-              Function.prototype.call.call(console.log, console, Array.prototype.slice.call(arguments));
-            };
-          }
-        }
+        Log4js._initLogger();
       }
 
       if (Log4js.logger) {
-        Log4js.logger.apply(window.console, arguments);
+        try {
+          Log4js.logger.apply(window.console, arguments);
+        } catch(e) {
+          Log4js._initLogger();
+          if (Log4js.logger) {
+            Log4js.logger.apply(window.console, arguments);
+          }
+        }
       }
 
       var logElement = document.getElementById(PushStream.LOG_OUTPUT_ELEMENT_ID);
@@ -163,18 +205,22 @@
   };
 
   var Ajax = {
-    _getXHRObject : function() {
+    _getXHRObject : function(crossDomain) {
       var xhr = false;
+      if (crossDomain) {
+        try { xhr = new window.XDomainRequest(); } catch (e) { }
+        if (xhr) {
+          return xhr;
+        }
+      }
+
       try { xhr = new window.XMLHttpRequest(); }
       catch (e1) {
-        try { xhr = new window.XDomainRequest(); }
+        try { xhr = new window.ActiveXObject("Msxml2.XMLHTTP"); }
         catch (e2) {
-          try { xhr = new window.ActiveXObject("Msxml2.XMLHTTP"); }
+          try { xhr = new window.ActiveXObject("Microsoft.XMLHTTP"); }
           catch (e3) {
-            try { xhr = new window.ActiveXObject("Microsoft.XMLHTTP"); }
-            catch (e4) {
-              xhr = false;
-            }
+            xhr = false;
           }
         }
       }
@@ -184,22 +230,36 @@
     _send : function(settings, post) {
       settings = settings || {};
       settings.timeout = settings.timeout || 30000;
-      var xhr = Ajax._getXHRObject();
+      var xhr = Ajax._getXHRObject(settings.crossDomain);
       if (!xhr||!settings.url) { return; }
 
       Ajax.clear(settings);
 
-      xhr.onreadystatechange = function () {
-        if (xhr.readyState === 4) {
-          Ajax.clear(settings);
+      settings.xhr = xhr;
+
+      if (window.XDomainRequest && (xhr instanceof window.XDomainRequest)) {
+        xhr.onload = function () {
           if (settings.afterReceive) { settings.afterReceive(xhr); }
-          if(xhr.status === 200) {
-            if (settings.success) { settings.success(xhr.responseText); }
-          } else {
-            if (settings.error) { settings.error(xhr.status); }
+          if (settings.success) { settings.success(xhr.responseText); }
+        };
+
+        xhr.onerror = xhr.ontimeout = function () {
+          if (settings.afterReceive) { settings.afterReceive(xhr); }
+          if (settings.error) { settings.error(xhr.status); }
+        };
+      } else {
+        xhr.onreadystatechange = function () {
+          if (xhr.readyState === 4) {
+            Ajax.clear(settings);
+            if (settings.afterReceive) { settings.afterReceive(xhr); }
+            if(xhr.status === 200) {
+              if (settings.success) { settings.success(xhr.responseText); }
+            } else {
+              if (settings.error) { settings.error(xhr.status); }
+            }
           }
-        }
-      };
+        };
+      }
 
       if (settings.beforeOpen) { settings.beforeOpen(xhr); }
 
@@ -218,20 +278,28 @@
       if (settings.beforeSend) { settings.beforeSend(xhr); }
 
       var onerror = function() {
-        try { xhr.abort(); } catch (e) { /* ignore error on closing */ }
         Ajax.clear(settings);
+        try { xhr.abort(); } catch (e) { /* ignore error on closing */ }
         settings.error(304);
       };
 
       if (post) {
-        xhr.setRequestHeader("Accept", "application/json");
-        xhr.setRequestHeader("Content-type", "application/x-www-form-urlencoded");
+        if (xhr.setRequestHeader) {
+          xhr.setRequestHeader("Accept", "application/json");
+          xhr.setRequestHeader("Content-type", "application/x-www-form-urlencoded");
+        }
       } else {
         settings.timeoutId = window.setTimeout(onerror, settings.timeout + 2000);
       }
 
       xhr.send(body);
       return xhr;
+    },
+
+    _clear_xhr : function(xhr) {
+      if (xhr) {
+        xhr.onreadystatechange = null;
+      }
     },
 
     _clear_script : function(script) {
@@ -243,14 +311,21 @@
     },
 
     _clear_timeout : function(settings) {
-      if (settings.timeoutId) {
-        settings.timeoutId = window.clearTimeout(settings.timeoutId);
+      settings.timeoutId = clearTimer(settings.timeoutId);
+    },
+
+    _clear_jsonp : function(settings) {
+      var callbackFunctionName = settings.data.callback;
+      if (callbackFunctionName) {
+        window[callbackFunctionName] = function() { window[callbackFunctionName] = null; };
       }
     },
 
     clear : function(settings) {
       Ajax._clear_timeout(settings);
+      Ajax._clear_jsonp(settings);
       Ajax._clear_script(document.getElementById(settings.scriptId));
+      Ajax._clear_xhr(settings.xhr);
     },
 
     jsonp : function(settings) {
@@ -259,12 +334,12 @@
 
       var head = document.head || document.getElementsByTagName("head")[0];
       var script = document.createElement("script");
-      var startTime = new Date().getTime();
+      var startTime = getTime();
 
       var onerror = function() {
         Ajax.clear(settings);
-        var endTime = new Date().getTime();
-        settings.error(((endTime - startTime) > settings.timeout/2) ? 304 : 0);
+        var endTime = getTime();
+        settings.error(((endTime - startTime) > settings.timeout/2) ? 304 : 403);
       };
 
       var onload = function() {
@@ -272,10 +347,19 @@
         settings.load();
       };
 
+      var onsuccess = function() {
+        settings.afterSuccess = true;
+        settings.success.apply(null, arguments);
+      };
+
       script.onerror = onerror;
       script.onload = script.onreadystatechange = function(eventLoad) {
         if (!script.readyState || /loaded|complete/.test(script.readyState)) {
-          onload();
+          if (settings.afterSuccess) {
+            onload();
+          } else {
+            onerror();
+          }
         }
       };
 
@@ -283,7 +367,11 @@
       if (settings.beforeSend) { settings.beforeSend({}); }
 
       settings.timeoutId = window.setTimeout(onerror, settings.timeout + 2000);
-      settings.scriptId = settings.scriptId || new Date().getTime();
+      settings.scriptId = settings.scriptId || getTime();
+      settings.afterSuccess = null;
+
+      settings.data.callback = settings.scriptId + "_onmessage_" + getTime();
+      window[settings.data.callback] = onsuccess;
 
       script.setAttribute("src", addParamsToUrl(settings.url, extend({}, settings.data, currentTimestampParam())));
       script.setAttribute("async", "async");
@@ -291,6 +379,7 @@
 
       // Use insertBefore instead of appendChild to circumvent an IE6 bug.
       head.insertBefore(script, head.firstChild);
+      return settings;
     },
 
     load : function(settings) {
@@ -310,16 +399,16 @@
     return (text) ? window.unescape(text) : '';
   };
 
-  var parseMessage = function(messageText, keys) {
+  Utils.parseMessage = function(messageText, keys) {
     var msg = messageText;
     if (isString(messageText)) {
-      msg = parseJSON(messageText);
+      msg = Utils.parseJSON(messageText);
     }
 
     var message = {
         id     : msg[keys.jsonIdKey],
         channel: msg[keys.jsonChannelKey],
-        data   : isString(msg[keys.jsonDataKey]) ? unescapeText(msg[keys.jsonDataKey]) : msg[keys.jsonDataKey],
+        text   : isString(msg[keys.jsonTextKey]) ? unescapeText(msg[keys.jsonTextKey]) : msg[keys.jsonTextKey],
         tag    : msg[keys.jsonTagKey],
         time   : msg[keys.jsonTimeKey],
         eventid: msg[keys.jsonEventIdKey] || ""
@@ -332,25 +421,26 @@
     return (options.backtrack) ? ".b" + Number(options.backtrack) : "";
   };
 
-  var getChannelsPath = function(channels) {
+  var getChannelsPath = function(channels, withBacktrack) {
     var path = '';
     for (var channelName in channels) {
       if (!channels.hasOwnProperty || channels.hasOwnProperty(channelName)) {
-        path += "/" + channelName + getBacktrack(channels[channelName]);
+        path += "/" + channelName + (withBacktrack ? getBacktrack(channels[channelName]) : "");
       }
     }
     return path;
   };
 
-  var getSubscriberUrl = function(pushstream, prefix, extraParams) {
+  var getSubscriberUrl = function(pushstream, prefix, extraParams, withBacktrack) {
     var websocket = pushstream.wrapper.type === WebSocketWrapper.TYPE;
     var useSSL = pushstream.useSSL;
+    var port = normalizePort(useSSL, pushstream.port);
     var url = (websocket) ? ((useSSL) ? "wss://" : "ws://") : ((useSSL) ? "https://" : "http://");
     url += pushstream.host;
-    url += ((!useSSL && pushstream.port === 80) || (useSSL && pushstream.port === 443)) ? "" : (":" + pushstream.port);
+    url += (port ? (":" + port) : "");
     url += prefix;
 
-    var channels = getChannelsPath(pushstream.channels);
+    var channels = getChannelsPath(pushstream.channels, withBacktrack);
     if (pushstream.channelsByArgument) {
       var channelParam = {};
       channelParam[pushstream.channelsArgument] = channels.substring(1);
@@ -362,22 +452,17 @@
   };
 
   var getPublisherUrl = function(pushstream) {
-    var channel = "";
+    var port = normalizePort(pushstream.useSSL, pushstream.port);
     var url = (pushstream.useSSL) ? "https://" : "http://";
     url += pushstream.host;
-    url += ((pushstream.port !== 80) && (pushstream.port !== 443)) ? (":" + pushstream.port) : "";
+    url += (port ? (":" + port) : "");
     url += pushstream.urlPrefixPublisher;
-    for (var channelName in pushstream.channels) {
-      if (!pushstream.channels.hasOwnProperty || pushstream.channels.hasOwnProperty(channelName)) {
-        channel = channelName;
-        break;
-      }
-    }
-    url += "?id=" + channel;
+    url += "?id=" + getChannelsPath(pushstream.channels, false);
+
     return url;
   };
 
-  var extract_xss_domain = function(domain) {
+  Utils.extract_xss_domain = function(domain) {
     // if domain is an ip address return it, else return ate least the last two parts of it
     if (domain.match(/^(\d{1,3}\.){3}\d{1,3}$/)) {
       return domain;
@@ -391,6 +476,27 @@
     return domainParts.slice(-1 * keepNumber).join('.');
   };
 
+  var normalizePort = function (useSSL, port) {
+    port = Number(port || (useSSL ? 443 : 80));
+    return ((!useSSL && port === 80) || (useSSL && port === 443)) ? "" : port;
+  };
+
+  Utils.isCrossDomainUrl = function(url) {
+    if (!url) {
+      return false;
+    }
+
+    var parser = document.createElement('a');
+    parser.href = url;
+
+    var srcPort = normalizePort(window.location.protocol === "https:", window.location.port);
+    var dstPort = normalizePort(parser.protocol === "https:", parser.port);
+
+    return (window.location.protocol !== parser.protocol) ||
+           (window.location.hostname !== parser.hostname) ||
+           (srcPort !== dstPort);
+  };
+
   var linker = function(method, instance) {
     return function() {
       return method.apply(instance, arguments);
@@ -399,7 +505,7 @@
 
   var clearTimer = function(timer) {
     if (timer) {
-      clearTimeout(timer);
+      window.clearTimeout(timer);
     }
     return null;
   };
@@ -407,8 +513,11 @@
   /* common callbacks */
   var onmessageCallback = function(event) {
     Log4js.info("[" + this.type + "] message received", arguments);
-    var message = parseMessage(event.data, this.pushstream);
-    this.pushstream._onmessage(message.data, message.id, message.channel, message.eventid, true);
+    var message = Utils.parseMessage(event.data, this.pushstream);
+    if (message.tag) { this.pushstream._etag = message.tag; }
+    if (message.time) { this.pushstream._lastModified = message.time; }
+    if (message.eventid) { this.pushstream._lastEventId = message.eventid; }
+    this.pushstream._onmessage(message.text, message.id, message.channel, message.eventid, true, message.time);
   };
 
   var onopenCallback = function() {
@@ -421,12 +530,12 @@
     if ((this.pushstream.readyState === PushStream.OPEN) &&
         (this.type === EventSourceWrapper.TYPE) &&
         (event.type === 'error') &&
-        (this.connection.readyState === EventSource.CONNECTING)) {
-      // EventSource already has a reconection function using the last-event-id header
+        (this.connection.readyState === window.EventSource.CONNECTING)) {
+      // EventSource already has a reconnection function using the last-event-id header
       return;
     }
     this._closeCurrentConnection();
-    this.pushstream._onerror({type: ((event && (event.type === "load")) || (this.pushstream.readyState === PushStream.CONNECTING)) ? "load" : "timeout"});
+    this.pushstream._onerror({type: ((event && ((event.type === "load") || (event.type === "close"))) || (this.pushstream.readyState === PushStream.CONNECTING)) ? "load" : "timeout"});
   };
 
   /* wrappers */
@@ -443,8 +552,8 @@
   WebSocketWrapper.prototype = {
     connect: function() {
       this._closeCurrentConnection();
-      var params = extend({}, this.pushstream.extraParams(), currentTimestampParam());
-      var url = getSubscriberUrl(this.pushstream, this.pushstream.urlPrefixWebsocket, params);
+      var params = extend({}, this.pushstream.extraParams(), currentTimestampParam(), getControlParams(this.pushstream));
+      var url = getSubscriberUrl(this.pushstream, this.pushstream.urlPrefixWebsocket, params, !this.pushstream._useControlArguments());
       this.connection = (window.WebSocket) ? new window.WebSocket(url) : new window.MozWebSocket(url);
       this.connection.onerror   = linker(onerrorCallback, this);
       this.connection.onclose   = linker(onerrorCallback, this);
@@ -455,7 +564,7 @@
 
     disconnect: function() {
       if (this.connection) {
-        Log4js.debug("[WebSocket] closing connection to:", this.connection.URL);
+        Log4js.debug("[WebSocket] closing connection to:", this.connection.url);
         this.connection.onclose = null;
         this._closeCurrentConnection();
         this.pushstream._onclose();
@@ -486,8 +595,8 @@
   EventSourceWrapper.prototype = {
     connect: function() {
       this._closeCurrentConnection();
-      var params = extend({}, this.pushstream.extraParams(), currentTimestampParam());
-      var url = getSubscriberUrl(this.pushstream, this.pushstream.urlPrefixEventsource, params);
+      var params = extend({}, this.pushstream.extraParams(), currentTimestampParam(), getControlParams(this.pushstream));
+      var url = getSubscriberUrl(this.pushstream, this.pushstream.urlPrefixEventsource, params, !this.pushstream._useControlArguments());
       this.connection = new window.EventSource(url);
       this.connection.onerror   = linker(onerrorCallback, this);
       this.connection.onopen    = linker(onopenCallback, this);
@@ -497,7 +606,8 @@
 
     disconnect: function() {
       if (this.connection) {
-        Log4js.debug("[EventSource] closing connection to:", this.connection.URL);
+        Log4js.debug("[EventSource] closing connection to:", this.connection.url);
+        this.connection.onclose = null;
         this._closeCurrentConnection();
         this.pushstream._onclose();
       }
@@ -526,14 +636,14 @@
   StreamWrapper.prototype = {
     connect: function() {
       this._closeCurrentConnection();
-      var domain = extract_xss_domain(this.pushstream.host);
+      var domain = Utils.extract_xss_domain(this.pushstream.host);
       try {
         document.domain = domain;
       } catch(e) {
         Log4js.error("[Stream] (warning) problem setting document.domain = " + domain + " (OBS: IE8 does not support set IP numbers as domain)");
       }
-      var params = extend({}, this.pushstream.extraParams(), currentTimestampParam(), {"streamid": this.pushstream.id});
-      this.url = getSubscriberUrl(this.pushstream, this.pushstream.urlPrefixStream, params);
+      var params = extend({}, this.pushstream.extraParams(), currentTimestampParam(), {"streamid": this.pushstream.id}, getControlParams(this.pushstream));
+      this.url = getSubscriberUrl(this.pushstream, this.pushstream.urlPrefixStream, params, !this.pushstream._useControlArguments());
       Log4js.debug("[Stream] connecting to:", this.url);
       this.loadFrame(this.url);
     },
@@ -550,6 +660,7 @@
       var oldIframe = document.getElementById(this.iframeId);
       if (oldIframe) {
         oldIframe.onload = null;
+        oldIframe.src = "about:blank";
         if (oldIframe.parentNode) { oldIframe.parentNode.removeChild(oldIframe); }
       }
     },
@@ -567,20 +678,19 @@
 
     loadFrame: function(url) {
       this._clear_iframe();
-      try {
+
+      var ifr = null;
+      if ("ActiveXObject" in window) {
         var transferDoc = new window.ActiveXObject("htmlfile");
         transferDoc.open();
-        transferDoc.write("<html><script>document.domain=\""+(document.domain)+"\";</script></html>");
+        transferDoc.write("\x3C" + "html" + "\x3E\x3C" + "script" + "\x3E" + "document.domain='" + document.domain + "';\x3C" + "/script" + "\x3E");
+        transferDoc.write("\x3C" + "body" + "\x3E\x3C" + "iframe id='" + this.iframeId + "' src='" + url + "'\x3E\x3C" + "/iframe" + "\x3E\x3C" + "/body" + "\x3E\x3C" + "/html" + "\x3E");
         transferDoc.parentWindow.PushStream = PushStream;
         transferDoc.close();
-        var ifrDiv = transferDoc.createElement("div");
-        transferDoc.appendChild(ifrDiv);
-        ifrDiv.innerHTML = "<iframe src=\""+url+"\"></iframe>";
-        this.connection = ifrDiv.getElementsByTagName("IFRAME")[0];
-        this.connection.onload = linker(onerrorCallback, this);
+        ifr = transferDoc.getElementById(this.iframeId);
         this.transferDoc = transferDoc;
-      } catch (e) {
-        var ifr = document.createElement("IFRAME");
+      } else {
+        ifr = document.createElement("IFRAME");
         ifr.style.width = "1px";
         ifr.style.height = "1px";
         ifr.style.border = "none";
@@ -591,10 +701,11 @@
         ifr.PushStream = PushStream;
         document.body.appendChild(ifr);
         ifr.setAttribute("src", url);
-        ifr.onload = linker(onerrorCallback, this);
-        this.connection = ifr;
+        ifr.setAttribute("id", this.iframeId);
       }
-      this.connection.setAttribute("id", this.iframeId);
+
+      ifr.onload = linker(onerrorCallback, this);
+      this.connection = ifr;
       this.frameloadtimer = window.setTimeout(linker(onerrorCallback, this), this.pushstream.timeout);
     },
 
@@ -607,10 +718,15 @@
       Log4js.info("[Stream] frame registered");
     },
 
-    process: function(id, channel, data, eventid) {
+    process: function(id, channel, text, eventid, time, tag) {
       this.pingtimer = clearTimer(this.pingtimer);
       Log4js.info("[Stream] message received", arguments);
-      this.pushstream._onmessage(unescapeText(data), id, channel, eventid, true);
+      if (id !== -1) {
+        if (tag) { this.pushstream._etag = tag; }
+        if (time) { this.pushstream._lastModified = time; }
+        if (eventid) { this.pushstream._lastEventId = eventid; }
+      }
+      this.pushstream._onmessage(unescapeText(text), id, channel, eventid || "", true, time);
       this.setPingTimer();
     },
 
@@ -630,20 +746,16 @@
     this.type = LongPollingWrapper.TYPE;
     this.pushstream = pushstream;
     this.connection = null;
-    this.lastModified = null;
-    this.etag = 0;
-    this.connectionEnabled = false;
     this.opentimer = null;
     this.messagesQueue = [];
     this._linkedInternalListen = linker(this._internalListen, this);
     this.xhrSettings = {
-        timeout: this.pushstream.longPollingTimeout,
+        timeout: this.pushstream.timeout,
         data: {},
         url: null,
         success: linker(this.onmessage, this),
         error: linker(this.onerror, this),
         load: linker(this.onload, this),
-        beforeOpen: linker(this.beforeOpen, this),
         beforeSend: linker(this.beforeSend, this),
         afterReceive: linker(this.afterReceive, this)
     };
@@ -655,33 +767,30 @@
     connect: function() {
       this.messagesQueue = [];
       this._closeCurrentConnection();
-      this.connectionEnabled = true;
-      this.xhrSettings.url = getSubscriberUrl(this.pushstream, this.pushstream.urlPrefixLongpolling);
-      var domain = extract_xss_domain(this.pushstream.host);
-      var currentDomain = extract_xss_domain(window.location.hostname);
-      var port = this.pushstream.port;
-      var currentPort = window.location.port || (this.pushstream.useSSL ? 443 : 80);
-      this.useJSONP = (domain !== currentDomain) || (port !== currentPort) || this.pushstream.longPollingUseJSONP;
+      this.urlWithBacktrack = getSubscriberUrl(this.pushstream, this.pushstream.urlPrefixLongpolling, {}, true);
+      this.urlWithoutBacktrack = getSubscriberUrl(this.pushstream, this.pushstream.urlPrefixLongpolling, {}, false);
+      this.xhrSettings.url = this.urlWithBacktrack;
+      this.useJSONP = this.pushstream._crossDomain || this.pushstream.useJSONP;
       this.xhrSettings.scriptId = "PushStreamManager_" + this.pushstream.id;
       if (this.useJSONP) {
-        this.pushstream.longPollingByHeaders = false;
-        this.xhrSettings.data.callback = "PushStreamManager[" + this.pushstream.id + "].wrapper.onmessage";
+        this.pushstream.messagesControlByArgument = true;
       }
-      this._internalListen();
-      this.opentimer = window.setTimeout(linker(onopenCallback, this), 5000);
+      this._listen();
+      this.opentimer = window.setTimeout(linker(onopenCallback, this), 150);
       Log4js.info("[LongPolling] connecting to:", this.xhrSettings.url);
     },
 
     _listen: function() {
       if (this._internalListenTimeout) { clearTimer(this._internalListenTimeout); }
-      this._internalListenTimeout = window.setTimeout(this._linkedInternalListen, this.pushstream.longPollingInterval);
+      this._internalListenTimeout = window.setTimeout(this._linkedInternalListen, 100);
     },
 
     _internalListen: function() {
-      if (this.connectionEnabled) {
-        this.xhrSettings.data = extend({}, this.pushstream.extraParams(), this.xhrSettings.data);
+      if (this.pushstream._keepConnected) {
+        this.xhrSettings.url = this.pushstream._useControlArguments() ? this.urlWithoutBacktrack : this.urlWithBacktrack;
+        this.xhrSettings.data = extend({}, this.pushstream.extraParams(), this.xhrSettings.data, getControlParams(this.pushstream));
         if (this.useJSONP) {
-          Ajax.jsonp(this.xhrSettings);
+          this.connection = Ajax.jsonp(this.xhrSettings);
         } else if (!this.connection) {
           this.connection = Ajax.load(this.xhrSettings);
         }
@@ -689,7 +798,6 @@
     },
 
     disconnect: function() {
-      this.connectionEnabled = false;
       if (this.connection) {
         Log4js.debug("[LongPolling] closing connection to:", this.xhrSettings.url);
         this._closeCurrentConnection();
@@ -700,49 +808,37 @@
     _closeCurrentConnection: function() {
       this.opentimer = clearTimer(this.opentimer);
       if (this.connection) {
-        try { this.connection.abort(); } catch (e) { /* ignore error on closing */ }
+        try { this.connection.abort(); } catch (e) {
+          try { Ajax.clear(this.connection); } catch (e1) { /* ignore error on closing */ }
+        }
         this.connection = null;
-        this.lastModified = null;
         this.xhrSettings.url = null;
       }
     },
 
-    beforeOpen: function(xhr) {
-      if (this.lastModified === null) {
-        var date = new Date();
-        if (this.pushstream.secondsAgo) { date.setTime(date.getTime() - (this.pushstream.secondsAgo * 1000)); }
-        this.lastModified = dateToUTCString(date);
-      }
-
-      if (!this.pushstream.longPollingByHeaders) {
-        this.xhrSettings.data[this.pushstream.longPollingTagArgument] = this.etag;
-        this.xhrSettings.data[this.pushstream.longPollingTimeArgument] = this.lastModified;
-      }
-    },
-
     beforeSend: function(xhr) {
-      if (this.pushstream.longPollingByHeaders) {
-        xhr.setRequestHeader("If-None-Match", this.etag);
-        xhr.setRequestHeader("If-Modified-Since", this.lastModified);
+      if (!this.pushstream.messagesControlByArgument) {
+        xhr.setRequestHeader("If-None-Match", this.pushstream._etag);
+        xhr.setRequestHeader("If-Modified-Since", this.pushstream._lastModified);
       }
     },
 
     afterReceive: function(xhr) {
-      if (this.pushstream.longPollingByHeaders) {
-        this.etag = xhr.getResponseHeader('Etag');
-        this.lastModified = xhr.getResponseHeader('Last-Modified');
+      if (!this.pushstream.messagesControlByArgument) {
+        this.pushstream._etag = xhr.getResponseHeader('Etag');
+        this.pushstream._lastModified = xhr.getResponseHeader('Last-Modified');
       }
       this.connection = null;
     },
 
     onerror: function(status) {
-      if (this.connectionEnabled) { /* abort(), called by disconnect(), call this callback, but should be ignored */
+      this._closeCurrentConnection();
+      if (this.pushstream._keepConnected) { /* abort(), called by disconnect(), call this callback, but should be ignored */
         if (status === 304) {
           this._listen();
         } else {
           Log4js.info("[LongPolling] error (disconnected by server):", status);
-          this._closeCurrentConnection();
-          this.pushstream._onerror({type: (status === 403) ? "load" : "timeout"});
+          this.pushstream._onerror({type: ((status === 403) || (this.pushstream.readyState === PushStream.CONNECTING)) ? "load" : "timeout"});
         }
       }
     },
@@ -752,16 +848,17 @@
     },
 
     onmessage: function(responseText) {
+      if (this._internalListenTimeout) { clearTimer(this._internalListenTimeout); }
       Log4js.info("[LongPolling] message received", responseText);
       var lastMessage = null;
-      var messages = isArray(responseText) ? responseText : responseText.split("\r\n");
+      var messages = isArray(responseText) ? responseText : responseText.replace(/\}\{/g, "}\r\n{").split("\r\n");
       for (var i = 0; i < messages.length; i++) {
         if (messages[i]) {
-          lastMessage = parseMessage(messages[i], this.pushstream);
+          lastMessage = Utils.parseMessage(messages[i], this.pushstream);
           this.messagesQueue.push(lastMessage);
-          if (!this.pushstream.longPollingByHeaders && lastMessage.time) {
-            this.etag = lastMessage.tag;
-            this.lastModified = lastMessage.time;
+          if (this.pushstream.messagesControlByArgument && lastMessage.time) {
+            this.pushstream._etag = lastMessage.tag;
+            this.pushstream._lastModified = lastMessage.time;
           }
         }
       }
@@ -770,7 +867,7 @@
 
       while (this.messagesQueue.length > 0) {
         var message = this.messagesQueue.shift();
-        this.pushstream._onmessage(message.data, message.id, message.channel, message.eventid, (this.messagesQueue.length === 0));
+        this.pushstream._onmessage(message.text, message.id, message.channel, message.eventid, (this.messagesQueue.length === 0), message.time);
       }
     }
   };
@@ -786,22 +883,25 @@
 
     this.useSSL = settings.useSSL || false;
     this.host = settings.host || window.location.hostname;
-    this.port = settings.port || (this.useSSL ? 443 : 80);
+    this.port = Number(settings.port || (this.useSSL ? 443 : 80));
 
-    this.timeout = settings.timeout || 15000;
+    this.timeout = settings.timeout || 30000;
     this.pingtimeout = settings.pingtimeout || 30000;
-    this.reconnecttimeout = settings.reconnecttimeout || 3000;
-    this.checkChannelAvailabilityInterval = settings.checkChannelAvailabilityInterval || 60000;
+    this.reconnectOnTimeoutInterval = settings.reconnectOnTimeoutInterval || 3000;
+    this.reconnectOnChannelUnavailableInterval = settings.reconnectOnChannelUnavailableInterval || 60000;
 
-    this.secondsAgo = Number(settings.secondsAgo);
-    this.longPollingByHeaders     = (settings.longPollingByHeaders === undefined) ? true : settings.longPollingByHeaders;
-    this.longPollingTagArgument   = settings.longPollingTagArgument  || 'tag';
-    this.longPollingTimeArgument  = settings.longPollingTimeArgument || 'time';
-    this.longPollingUseJSONP      = settings.longPollingUseJSONP     || false;
-    this.longPollingTimeout       = settings.longPollingTimeout      || 30000;
-    this.longPollingInterval      = settings.longPollingInterval     || 100;
+    this.lastEventId = settings.lastEventId || null;
+    this.messagesPublishedAfter = settings.messagesPublishedAfter;
+    this.messagesControlByArgument = settings.messagesControlByArgument || false;
+    this.tagArgument   = settings.tagArgument  || 'tag';
+    this.timeArgument  = settings.timeArgument || 'time';
+    this.eventIdArgument  = settings.eventIdArgument || 'eventid';
+    this.useJSONP      = settings.useJSONP     || false;
 
-    this.reconnecttimer = null;
+    this._reconnecttimer = null;
+    this._etag = 0;
+    this._lastModified = null;
+    this._lastEventId = null;
 
     this.urlPrefixPublisher   = settings.urlPrefixPublisher   || '/pub';
     this.urlPrefixStream      = settings.urlPrefixStream      || '/sub';
@@ -811,7 +911,7 @@
 
     this.jsonIdKey      = settings.jsonIdKey      || 'id';
     this.jsonChannelKey = settings.jsonChannelKey || 'channel';
-    this.jsonDataKey    = settings.jsonDataKey    || 'text';
+    this.jsonTextKey    = settings.jsonTextKey    || 'text';
     this.jsonTagKey     = settings.jsonTagKey     || 'tag';
     this.jsonTimeKey    = settings.jsonTimeKey    || 'time';
     this.jsonEventIdKey = settings.jsonEventIdKey || 'eventid';
@@ -820,17 +920,18 @@
     this.wrappers = [];
     this.wrapper = null;
 
-    this.onopen = null;
-    this.onmessage = null;
-    this.onerror = null;
-    this.onstatuschange = null;
+    this.onchanneldeleted = settings.onchanneldeleted || null;
+    this.onmessage = settings.onmessage || null;
+    this.onerror = settings.onerror || null;
+    this.onstatuschange = settings.onstatuschange || null;
+    this.extraParams    = settings.extraParams    || function() { return {}; };
 
     this.channels = {};
     this.channelsCount = 0;
     this.channelsByArgument   = settings.channelsByArgument   || false;
     this.channelsArgument     = settings.channelsArgument     || 'channels';
 
-    this.extraParams          = settings.extraParams          || this.extraParams;
+    this._crossDomain = Utils.isCrossDomainUrl(getPublisherUrl(this));
 
     for (var i = 0; i < this.modes.length; i++) {
       try {
@@ -845,7 +946,7 @@
       } catch(e) { Log4js.info(e); }
     }
 
-    this._setState(0);
+    this.readyState = 0;
   };
 
   /* constants */
@@ -859,10 +960,6 @@
 
   /* main code */
   PushStream.prototype = {
-    extraParams: function() {
-      return {};
-    },
-
     addChannel: function(channel, options) {
       if (escapeText(channel) !== channel) {
         throw "Invalid channel name! Channel has to be a set of [a-zA-Z0-9]";
@@ -924,7 +1021,31 @@
       Log4js.debug("leaving disconnect");
     },
 
+    _useControlArguments :function() {
+      return this.messagesControlByArgument && ((this._lastModified !== null) || (this._lastEventId !== null));
+    },
+
     _connect: function() {
+      if (this._lastEventId === null) {
+        this._lastEventId = this.lastEventId;
+      }
+      if (this._lastModified === null) {
+        var date = this.messagesPublishedAfter;
+        if (!isDate(date)) {
+          var messagesPublishedAfter = Number(this.messagesPublishedAfter);
+          if (messagesPublishedAfter > 0) {
+            date = new Date();
+            date.setTime(date.getTime() - (messagesPublishedAfter * 1000));
+          } else if (messagesPublishedAfter < 0) {
+            date = new Date(0);
+          }
+        }
+
+        if (isDate(date)) {
+          this._lastModified = Utils.dateToUTCString(date);
+        }
+      }
+
       this._disconnect();
       this._setState(PushStream.CONNECTING);
       this.wrapper = this.wrappers[this._lastUsedMode++ % this.wrappers.length];
@@ -940,14 +1061,14 @@
     },
 
     _disconnect: function() {
-      this.reconnecttimer = clearTimer(this.reconnecttimer);
+      this._reconnecttimer = clearTimer(this._reconnecttimer);
       if (this.wrapper) {
         this.wrapper.disconnect();
       }
     },
 
     _onopen: function() {
-      this.reconnecttimer = clearTimer(this.reconnecttimer);
+      this._reconnecttimer = clearTimer(this._reconnecttimer);
       this._setState(PushStream.OPEN);
       if (this._lastUsedMode > 0) {
         this._lastUsedMode--; //use same mode on next connection
@@ -955,30 +1076,30 @@
     },
 
     _onclose: function() {
-      this.reconnecttimer = clearTimer(this.reconnecttimer);
+      this._reconnecttimer = clearTimer(this._reconnecttimer);
       this._setState(PushStream.CLOSED);
-      this._reconnect(this.reconnecttimeout);
+      this._reconnect(this.reconnectOnTimeoutInterval);
     },
 
-    _onmessage: function(data, id, channel, eventid, isLastMessageFromBatch) {
-      Log4js.debug("message", data, id, channel, eventid, isLastMessageFromBatch);
+    _onmessage: function(text, id, channel, eventid, isLastMessageFromBatch, time) {
+      Log4js.debug("message", text, id, channel, eventid, isLastMessageFromBatch, time);
       if (id === -2) {
         if (this.onchanneldeleted) { this.onchanneldeleted(channel); }
-      } else if ((id > 0) && (typeof(this.channels[channel]) !== "undefined")) {
-        if (this.onmessage) { this.onmessage(data, id, channel, eventid, isLastMessageFromBatch); }
+      } else if (id > 0) {
+        if (this.onmessage) { this.onmessage(text, id, channel, eventid, isLastMessageFromBatch, time); }
       }
     },
 
     _onerror: function(error) {
       this._setState(PushStream.CLOSED);
-      this._reconnect((error.type === "timeout") ? this.reconnecttimeout : this.checkChannelAvailabilityInterval);
+      this._reconnect((error.type === "timeout") ? this.reconnectOnTimeoutInterval : this.reconnectOnChannelUnavailableInterval);
       if (this.onerror) { this.onerror(error); }
     },
 
     _reconnect: function(timeout) {
-      if (this._keepConnected && !this.reconnecttimer && (this.readyState !== PushStream.CONNECTING)) {
+      if (this._keepConnected && !this._reconnecttimer && (this.readyState !== PushStream.CONNECTING)) {
         Log4js.info("trying to reconnect in", timeout);
-        this.reconnecttimer = window.setTimeout(linker(this._connect, this), timeout);
+        this._reconnecttimer = window.setTimeout(linker(this._connect, this), timeout);
       }
     },
 
@@ -988,7 +1109,7 @@
         this.wrapper.sendMessage(message);
         if (successCallback) { successCallback(); }
       } else {
-        Ajax.post({url: getPublisherUrl(this), data: message, success: successCallback, error: errorCallback});
+        Ajax.post({url: getPublisherUrl(this), data: message, success: successCallback, error: errorCallback, crossDomain: this._crossDomain});
       }
     }
   };

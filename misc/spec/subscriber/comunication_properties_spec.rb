@@ -18,7 +18,7 @@ describe "Comunication Properties" do
       EventMachine.run do
         sub = EventMachine::HttpRequest.new(nginx_address + '/sub/' + channel.to_s).get :head => headers
         sub.stream do |chunk|
-          chunk.should eql("#{conf.header_template}\r\n")
+          expect(chunk).to eql(conf.header_template)
           EventMachine.stop
         end
       end
@@ -33,14 +33,14 @@ describe "Comunication Properties" do
       EventMachine.run do
         sub_1 = EventMachine::HttpRequest.new(nginx_address + '/sub/' + channel.to_s).get :head => headers
         sub_1.callback do |chunk|
-          sub_1.should be_http_status(403).without_body
-          sub_1.response_header['X_NGINX_PUSHSTREAM_EXPLAIN'].should eql("Subscriber could not create channels.")
+          expect(sub_1).to be_http_status(403).without_body
+          expect(sub_1.response_header['X_NGINX_PUSHSTREAM_EXPLAIN']).to eql("Subscriber could not create channels.")
 
           pub = EventMachine::HttpRequest.new(nginx_address + '/pub?id=' + channel.to_s ).post :head => headers, :body => body
           pub.callback do
             sub_2 = EventMachine::HttpRequest.new(nginx_address + '/sub/' + channel.to_s).get :head => headers
             sub_2.stream do |chunk2|
-              chunk2.should eql("#{conf.header_template}\r\n")
+              expect(chunk2).to eql(conf.header_template)
               EventMachine.stop
             end
           end
@@ -84,9 +84,9 @@ describe "Comunication Properties" do
         end
 
         EM.add_timer(17) do
-          response_1.should eql("#{conf.header_template}\r\n#{body}\r\n")
-          response_2.should eql("#{conf.header_template}\r\n#{body}\r\n")
-          response_3.should eql("#{conf.header_template}\r\n")
+          expect(response_1).to eql("#{conf.header_template}#{body}")
+          expect(response_2).to eql("#{conf.header_template}#{body}")
+          expect(response_3).to eql("#{conf.header_template}")
           EventMachine.stop
         end
       end
@@ -98,7 +98,7 @@ describe "Comunication Properties" do
     body = 'message to create a channel'
 
     response = ""
-    nginx_run_server(config.merge(:message_template => '{\"duplicated\":\"~channel~\", \"channel\":\"~channel~\", \"message\":\"~text~\", \"message_id\":\"~id~\"}')) do |conf|
+    nginx_run_server(config.merge(:message_template => '|{\"duplicated\":\"~channel~\", \"channel\":\"~channel~\", \"message\":\"~text~\", \"message_id\":\"~id~\"}')) do |conf|
       publish_message(channel, headers, body)
 
       EventMachine.run do
@@ -106,12 +106,12 @@ describe "Comunication Properties" do
         sub.stream do |chunk|
           response += chunk
 
-          lines = response.split("\r\n")
+          lines = response.split("|")
 
           if lines.length >= 3
-            lines[0].should eql("#{conf.header_template}")
-            lines[1].should eql("{\"duplicated\":\"#{channel}\", \"channel\":\"#{channel}\", \"message\":\"#{body}\", \"message_id\":\"1\"}")
-            lines[2].should eql("{\"duplicated\":\"\", \"channel\":\"\", \"message\":\"\", \"message_id\":\"-1\"}")
+            expect(lines[0]).to eql("#{conf.header_template}")
+            expect(lines[1]).to eql("{\"duplicated\":\"#{channel}\", \"channel\":\"#{channel}\", \"message\":\"#{body}\", \"message_id\":\"1\"}")
+            expect(lines[2]).to eql("{\"duplicated\":\"\", \"channel\":\"\", \"message\":\" \", \"message_id\":\"-1\"}")
             EventMachine.stop
           end
         end
@@ -124,7 +124,7 @@ describe "Comunication Properties" do
     body = '~channel~~channel~~channel~~text~~text~~text~'
 
     response = ""
-    nginx_run_server(config.merge(:message_template => '{\"channel\":\"~channel~\", \"message\":\"~text~\", \"message_id\":\"~id~\"}')) do |conf|
+    nginx_run_server(config.merge(:message_template => '|{\"channel\":\"~channel~\", \"message\":\"~text~\", \"message_id\":\"~id~\"}')) do |conf|
       publish_message(channel, headers, body)
 
       EventMachine.run do
@@ -132,12 +132,12 @@ describe "Comunication Properties" do
         sub.stream do |chunk|
           response += chunk
 
-          lines = response.split("\r\n")
+          lines = response.split("|")
 
           if lines.length >= 3
-            lines[0].should eql("#{conf.header_template}")
-            lines[1].should eql("{\"channel\":\"ch_test_message_and_channel_with_same_pattern_of_the_template~channel~~channel~~channel~~channel~~channel~~channel~~text~~text~~text~~channel~~channel~~channel~~text~~text~~text~~channel~~channel~~channel~~text~~text~~text~\", \"message\":\"~channel~~channel~~channel~~text~~text~~text~\", \"message_id\":\"1\"}")
-            lines[2].should eql("{\"channel\":\"\", \"message\":\"\", \"message_id\":\"-1\"}")
+            expect(lines[0]).to eql("#{conf.header_template}")
+            expect(lines[1]).to eql("{\"channel\":\"ch_test_message_and_channel_with_same_pattern_of_the_template~channel~~channel~~channel~~text~~text~~text~\", \"message\":\"~channel~~channel~~channel~~text~~text~~text~\", \"message_id\":\"1\"}")
+            expect(lines[2]).to eql("{\"channel\":\"\", \"message\":\" \", \"message_id\":\"-1\"}")
             EventMachine.stop
           end
         end

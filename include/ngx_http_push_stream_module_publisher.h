@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2010-2011 Wandenberg Peixoto <wandenberg@gmail.com>, Rogério Carvalho Schneider <stockrt@gmail.com>
+ * Copyright (C) 2010-2015 Wandenberg Peixoto <wandenberg@gmail.com>, Rogério Carvalho Schneider <stockrt@gmail.com>
  *
  * This file is part of Nginx Push Stream Module.
  *
@@ -31,5 +31,6 @@
 static ngx_int_t    ngx_http_push_stream_channels_statistics_handler(ngx_http_request_t *r);
 static ngx_int_t    ngx_http_push_stream_publisher_handler(ngx_http_request_t *r);
 static void         ngx_http_push_stream_publisher_body_handler(ngx_http_request_t *r);
+static void         ngx_http_push_stream_publisher_delete_handler(ngx_http_request_t *r);
 
 #endif /* NGX_HTTP_PUSH_STREAM_MODULE_PUBLISHER_H_ */

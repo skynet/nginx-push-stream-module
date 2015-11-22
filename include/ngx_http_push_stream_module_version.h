@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2010-2011 Wandenberg Peixoto <wandenberg@gmail.com>, Rogério Carvalho Schneider <stockrt@gmail.com>
+ * Copyright (C) 2010-2015 Wandenberg Peixoto <wandenberg@gmail.com>, Rogério Carvalho Schneider <stockrt@gmail.com>
  *
  * This file is part of Nginx Push Stream Module.
  *
@@ -26,7 +26,7 @@
 #ifndef NGX_HTTP_PUSH_STREAM_MODULE_VERSION_H_
 #define NGX_HTTP_PUSH_STREAM_MODULE_VERSION_H_
 
-static const ngx_str_t  NGX_HTTP_PUSH_STREAM_TAG = ngx_string("0.3.5");
-static const ngx_str_t  NGX_HTTP_PUSH_STREAM_COMMIT = ngx_string("b6a8c461493148a409382b5bb101ac7b3a6e94f3");
+static const ngx_str_t  NGX_HTTP_PUSH_STREAM_TAG = ngx_string("0.5.0");
+static const ngx_str_t  NGX_HTTP_PUSH_STREAM_COMMIT = ngx_string("5566c365977fbe4211b5c3757427b82604891a10");
 
 #endif /* NGX_HTTP_PUSH_STREAM_MODULE_VERSION_H_ */
